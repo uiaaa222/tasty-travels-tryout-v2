@@ -1,0 +1,1227 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Tasty Travels · 田园餐厅试玩</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none;}
+  html,body{width:100%;height:100%;overflow:hidden;background:#2b1d12;
+    font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,-apple-system,sans-serif;}
+  canvas{display:block;width:100%;height:100%;touch-action:none;}
+
+  #topleft{position:fixed;z-index:40;left:calc(10px + env(safe-area-inset-left));
+    top:calc(10px + env(safe-area-inset-top));display:flex;flex-direction:column;
+    gap:8px;align-items:flex-start;pointer-events:none;}
+  #logo img{display:block;height:clamp(30px,6.2vw,50px);width:auto;
+    filter:drop-shadow(0 3px 0 rgba(80,50,20,.35));}
+  #logoText{display:none;font-weight:900;font-size:clamp(15px,3.4vw,24px);color:#ffd94a;
+    -webkit-text-stroke:2px #7a4a12;letter-spacing:.5px;}
+  #logoText i{font-style:normal;color:#7fd8ff;}
+  #hud{display:flex;gap:7px;font-size:12.5px;font-weight:800;color:#5a3a18;}
+  #hud span{background:rgba(255,246,230,.94);border:2px solid #b8834f;border-radius:999px;
+    padding:3px 11px;box-shadow:0 3px 0 rgba(120,80,40,.28);}
+  #hud .full{background:#ffd9cd;border-color:#d8543a;color:#a5301c;}
+  #hud .bank{background:#d9f5d1;border-color:#5aa84e;color:#2f5c28;}
+
+  #hint{position:fixed;z-index:40;left:50%;bottom:calc(78px + env(safe-area-inset-bottom));
+    transform:translateX(-50%);background:rgba(58,36,16,.86);color:#fff3dd;
+    font-size:12.5px;font-weight:700;padding:6px 15px;border-radius:999px;white-space:nowrap;
+    pointer-events:none;opacity:0;transition:opacity .28s;}
+  #hint.on{opacity:1;}
+
+  #endOverlay{position:fixed;inset:0;z-index:60;display:none;align-items:center;justify-content:center;
+    background:radial-gradient(circle at 50% 50%,rgba(30,16,4,.20),rgba(14,7,0,.72));}
+  #endOverlay.on{display:flex;}
+  .endBox{text-align:center;padding:26px 22px;}
+  .endTag{font-size:clamp(17px,4.2vw,24px);font-weight:900;color:#ffe27a;
+    text-shadow:0 3px 0 rgba(90,50,10,.65),0 0 22px rgba(255,200,60,.5);margin-bottom:22px;}
+  #playNow{display:inline-block;text-decoration:none;cursor:pointer;font-family:inherit;font-weight:900;
+    font-size:clamp(22px,5.6vw,34px);color:#4a2a06;letter-spacing:3px;padding:16px 48px;
+    border-radius:999px;background:linear-gradient(#ffe45c,#ffb32e);border:4px solid #fff6d8;
+    box-shadow:0 8px 0 #c07616,0 14px 26px rgba(0,0,0,.5);
+    animation:pulse 1.15s ease-in-out infinite;}
+  #playNow:active{transform:translateY(4px);box-shadow:0 4px 0 #c07616;}
+  @keyframes pulse{0%,100%{transform:scale(1);}50%{transform:scale(1.13);}}
+  .endSub{margin-top:20px;font-size:clamp(12px,3vw,15px);color:#ffe9c2;opacity:.92;font-weight:700;}
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+
+<div id="topleft">
+  <div id="logo">
+    <img id="logoImg" alt="Tasty Travels"
+      src="https://bcgpt-cn.oss-cn-beijing.aliyuncs.com/upload/image/2026/10/20261009/524a451a2e4ba60d6d4e9939d11193df.png">
+    <div id="logoText">Tasty <i>Travels</i></div>
+  </div>
+  <div id="hud">
+    <span id="hudBag">🌾 0/16</span>
+    <span id="hudCoin">💰 0</span>
+    <span id="hudPile" class="bank">🪙 0 待捡</span>
+  </div>
+</div>
+
+<div id="hint"></div>
+
+<div id="endOverlay">
+  <div class="endBox">
+    <div class="endTag">🎉 新区域已解锁</div>
+    <a id="playNow" href="https://play.google.com/store/apps/details?id=com.fatmerge.global"
+       target="_blank" rel="noopener">立即游玩</a>
+    <div class="endSub">Tasty Travels · 继续经营你的环球餐厅</div>
+  </div>
+</div>
+
+<script>
+(function(){
+'use strict';
+
+var CV=document.getElementById('cv'), ctx=CV.getContext('2d');
+var VW=0,VH=0,DPR=1;
+var EF='"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
+
+function clamp(v,a,b){return v<a?a:(v>b?b:v);}
+function lerp(a,b,t){return a+(b-a)*t;}
+function rnd(a,b){return a+Math.random()*(b-a);}
+function rr(c,x,y,w,h,r){r=Math.min(r,w/2,h/2);c.beginPath();c.moveTo(x+r,y);
+  c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);c.arcTo(x,y+h,x,y,r);
+  c.arcTo(x,y,x+w,y,r);c.closePath();}
+function dist(ax,ay,bx,by){var dx=ax-bx,dy=ay-by;return Math.sqrt(dx*dx+dy*dy);}
+
+/* ================= 数据 ================= */
+var ITEM={
+  wheat:{n:'小麦',i:'🌾'}, corn:{n:'玉米',i:'🌽'}, tomato:{n:'番茄',i:'🍅'}, peanut:{n:'花生',i:'🥜'},
+  bread:{n:'面包',i:'🍞',v:2}, grilled:{n:'烤玉米',i:'🍢',v:2},
+  soup:{n:'番茄浓汤',i:'🍲',v:4}, cookie:{n:'花生酥',i:'🍪',v:4}
+};
+var RAWS=['wheat','corn','tomato','peanut'];
+var DISHES=['bread','grilled','soup','cookie'];
+var RECIPE={wheat:'bread',corn:'grilled',tomato:'soup',peanut:'cookie'};
+
+function info(k){
+  if(k.indexOf('box_')===0){var d=k.slice(4);return {n:ITEM[d].n+'礼盒',i:'🎁',v:ITEM[d].v,dish:d};}
+  return ITEM[k];
+}
+
+var WORLD={w:1640,h:1280};
+var TILE=54, FIELD_S=216, REGROW=1.6;
+var FIELD_POS=[{x:26,y:36},{x:280,y:36},{x:26,y:296},{x:280,y:296}];
+
+/* 单一加工坊：不分品类，任何原料都能投 */
+var PROC={x:560,y:50,w:320,h:155,
+  inPos:{x:604,y:128}, outPos:{x:836,y:128},
+  inBuf:[], outBuf:[], job:null, prog:0, dur:0.26};
+
+/* 单一打包台：不分品类，任何成品都能投 */
+var PACK={x:560,y:280,w:320,h:155,
+  inPos:{x:604,y:358}, outPos:{x:836,y:358}, opPad:{x:720,y:500},
+  inBuf:[], outBuf:[], job:null, prog:0, dur:0.22, staffed:false};
+
+var COUNTER={x:990,y:400,w:320,h:62};
+/* 柜台后暂存带：整条柜台后面都能放，礼盒不限量（只显示前几排，多的堆叠计数） */
+var SHELF={x1:COUNTER.x+6,y1:354,x2:COUNTER.x+COUNTER.w-6,y2:384,
+  cx:1150,cy:369,w:COUNTER.w-12,h:30};
+var SHELF_CAP=999;                       /* 不限量（保留变量兼容旧逻辑） */
+var SERVE={x:1150,y:300};              /* 玩家站位：柜台后面（整条后侧都可放货） */
+
+/* 是否站在「柜台后面」这一整条区域里：整条后侧都能放货，不用对准某个点 */
+function behindCounter(x,y){
+  return x>COUNTER.x-48 && x<COUNTER.x+COUNTER.w+48
+      && y>COUNTER.y-160 && y<COUNTER.y-8;
+}
+var CASHIER_POS={x:1150,y:336};        /* 收银员员工：就站在收银位上，接替玩家的活 */
+var CASHIER_POS2={x:1258,y:334};       /* 备用站位 */
+var UP_TILE={x:640,y:650}, MONEY_TILE={x:880,y:650};
+var NEWAREA={x:26,y:660,w:520,h:320};
+/* 队首(QUEUE[0])就是「柜台前取餐位」：顾客必须走到这里才允许交货 */
+var QUEUE=[{x:1150,y:560},{x:1150,y:652},{x:1150,y:744},
+           {x:1150,y:836},{x:1150,y:928},{x:1150,y:1020}];
+
+/* ================= 状态 ================= */
+var player={x:135,y:580,speed:430,carry:{},coins:0,cap:16,walk:0,moving:false,cd:0,fullCd:0,warnCd:0};
+
+var state={t:0,frozen:false,ending:false,endT:0,newOn:false,newA:0,
+  pile:[],upIdx:0,upProg:0,conv1:false,conv2:false,autoPack:false,autoCash:false,
+  travel:[],shelf:[],floats:[],parts:[],spawnT:0.6,convT:0,conv2T:0,cashT:0,shelfHold:0,hint:''};
+
+var UPGRADES=[
+  {id:'conv1',   n:'传送带',     i:'⚙️', cost:4,  d:'加工完自动送到打包台'},
+  {id:'field2',  n:'开垦玉米地', i:'🌽', cost:6,  d:'解锁第二块耕地'},
+  {id:'cashier', n:'招聘收银员', i:'🛎️', cost:9,  d:'员工站到收银位，接替你招待客人'},
+  {id:'packer',  n:'招聘打包员', i:'📦', cost:12, d:'员工站到打包位，接替你打包'},
+  {id:'bag',     n:'背包扩容',   i:'🎒', cost:15, d:'原料容量 16 → 32'},
+  {id:'conv2',   n:'传送链',     i:'🛒', cost:20, d:'打包完直送收银台旁的托盘'},
+  {id:'field3',  n:'开垦番茄地', i:'🍅', cost:26, d:'解锁第三块耕地'},
+  {id:'field4',  n:'开垦花生地', i:'🥜', cost:32, d:'解锁第四块耕地'}
+];
+
+var fields=RAWS.map(function(raw,i){
+  var plots=[],j; for(j=0;j<16;j++) plots.push({m:true,t:0});
+  return {raw:raw,i:i,x:FIELD_POS[i].x,y:FIELD_POS[i].y,open:i===0,rev:i===0?1:0,plots:plots};
+});
+
+var customers=[], leavers=[];
+
+/* ================= 背包 ================= */
+function rawTotal(){var n=0,i;for(i=0;i<4;i++)n+=(player.carry[RAWS[i]]||0);return n;}
+function carryTotal(){var n=0,k;for(k in player.carry)n+=player.carry[k];return n;}
+function addCarry(k,n){player.carry[k]=(player.carry[k]||0)+(n||1);}
+function hasAny(keys){for(var i=0;i<keys.length;i++)if(player.carry[keys[i]])return true;return false;}
+function boxKeys(){var a=[],k;for(k in player.carry)if(k.indexOf('box_')===0)a.push(k);return a;}
+function dumpAll(keys,buf){
+  var n=0,i,k,c,j;
+  for(i=0;i<keys.length;i++){
+    k=keys[i]; c=player.carry[k]||0;
+    if(c>0){ for(j=0;j<c;j++) buf.push(k); n+=c; delete player.carry[k]; }
+  }
+  return n;
+}
+function drainAll(buf){
+  var n=0;
+  while(buf.length){ addCarry(buf.shift()); n++; }
+  return n;
+}
+
+/* ================= 特效 ================= */
+function float(x,y,text,color,size){
+  state.floats.push({x:x,y:y,text:text,c:color||'#fff',s:size||15,t:0,life:1.15});
+}
+function spark(x,y,color,n){
+  for(var i=0;i<n;i++){var a=rnd(0,6.2832),s=rnd(40,150);
+    state.parts.push({x:x,y:y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-60,
+      t:0,life:rnd(0.4,0.9),c:color,r:rnd(2,4)});}
+}
+
+/* ================= 输入 ================= */
+var keys={}, mouseHold=false, mouseW={x:0,y:0}, joyW={on:false,ox:0,oy:0,x:0,y:0,id:-1};
+var KMAP={w:1,a:1,s:1,d:1,arrowup:1,arrowdown:1,arrowleft:1,arrowright:1};
+
+CV.addEventListener('contextmenu',function(e){e.preventDefault();});
+CV.addEventListener('pointerdown',function(e){
+  try{CV.setPointerCapture(e.pointerId);}catch(err){}
+  if(e.pointerType==='mouse'){
+    mouseHold=true; var w=s2w(e.clientX,e.clientY); mouseW.x=w.x; mouseW.y=w.y;
+  }else{
+    joyW.on=true; joyW.id=e.pointerId; joyW.ox=e.clientX; joyW.oy=e.clientY;
+    joyW.x=e.clientX; joyW.y=e.clientY;
+  }
+  e.preventDefault();
+},{passive:false});
+CV.addEventListener('pointermove',function(e){
+  if(e.pointerType==='mouse'){
+    if(mouseHold){var w=s2w(e.clientX,e.clientY); mouseW.x=w.x; mouseW.y=w.y;}
+  }else if(joyW.on&&e.pointerId===joyW.id){ joyW.x=e.clientX; joyW.y=e.clientY; }
+});
+function rel(e){
+  if(e.pointerType==='mouse') mouseHold=false;
+  else if(joyW.on&&e.pointerId===joyW.id) joyW.on=false;
+}
+CV.addEventListener('pointerup',rel);
+CV.addEventListener('pointercancel',rel);
+window.addEventListener('blur',function(){mouseHold=false;joyW.on=false;keys={};});
+window.addEventListener('keydown',function(e){
+  var k=e.key.toLowerCase(); if(KMAP[k]){keys[k]=1;e.preventDefault();}
+});
+window.addEventListener('keyup',function(e){delete keys[e.key.toLowerCase()];});
+
+/* ================= 画布 / 相机 ================= */
+function resize(){
+  DPR=Math.min(window.devicePixelRatio||1,2);
+  VW=window.innerWidth; VH=window.innerHeight;
+  CV.width=Math.max(1,Math.floor(VW*DPR)); CV.height=Math.max(1,Math.floor(VH*DPR));
+  CV.style.width=VW+'px'; CV.style.height=VH+'px';
+}
+window.addEventListener('resize',resize);
+
+var cam={x:135,y:580,s:1,init:false};
+function s2w(sx,sy){return {x:cam.x+(sx-VW/2)/cam.s, y:cam.y+(sy-VH/2)/cam.s};}
+function updateCam(dt){
+  var ts=clamp(Math.min(VW/820,VH/1040),0.3,1.2);
+  if(!cam.init){cam.s=ts;cam.x=player.x;cam.y=player.y;cam.init=true;}
+  cam.s=lerp(cam.s,ts,Math.min(1,dt*4));
+  var hw=VW/2/cam.s, hh=VH/2/cam.s;
+  var ax,ay;
+  if(state.ending&&state.newOn){ ax=NEWAREA.x+NEWAREA.w/2; ay=NEWAREA.y+NEWAREA.h/2; }
+  else { ax=player.x; ay=player.y; }
+  var tx=WORLD.w>hw*2?clamp(ax,hw,WORLD.w-hw):WORLD.w/2;
+  var ty=WORLD.h>hh*2?clamp(ay,hh,WORLD.h-hh):WORLD.h/2;
+  cam.x=lerp(cam.x,tx,Math.min(1,dt*5));
+  cam.y=lerp(cam.y,ty,Math.min(1,dt*5));
+}
+
+/* ================= 地面预渲染 ================= */
+var groundCv=document.createElement('canvas');
+(function(){
+  groundCv.width=WORLD.w; groundCv.height=WORLD.h;
+  var g=groundCv.getContext('2d'),i;
+  g.fillStyle='#e2c093'; g.fillRect(0,0,WORLD.w,WORLD.h);
+  for(i=0;i<820;i++){
+    g.fillStyle='rgba('+(Math.random()<0.5?'206,168,116':'240,216,172')+','+rnd(0.05,0.15)+')';
+    g.beginPath(); g.arc(rnd(0,WORLD.w),rnd(0,WORLD.h),rnd(24,90),0,7); g.fill();
+  }
+  for(i=0;i<180;i++){
+    g.fillStyle='rgba(146,186,106,'+rnd(0.15,0.32)+')';
+    g.beginPath(); g.ellipse(rnd(0,WORLD.w),rnd(0,WORLD.h),rnd(14,42),rnd(8,22),rnd(0,3),0,7); g.fill();
+  }
+  g.strokeStyle='rgba(250,235,203,.78)'; g.lineCap='round'; g.lineJoin='round';
+  g.lineWidth=72;
+  g.beginPath(); g.moveTo(30,556); g.lineTo(1340,556); g.stroke();
+  g.beginPath(); g.moveTo(720,130); g.lineTo(720,720); g.stroke();
+  g.beginPath(); g.moveTo(1160,120); g.lineTo(1160,1030); g.stroke();
+})();
+
+/* ================= 更新 ================= */
+function updatePlayer(dt){
+  var p=player,dx=0,dy=0,mv=false,kx=0,ky=0,kd,ax,ay,ad;
+  if(joyW.on){
+    var jx=joyW.x-joyW.ox, jy=joyW.y-joyW.oy, d=Math.sqrt(jx*jx+jy*jy);
+    if(d>14){dx=jx/d;dy=jy/d;mv=true;}
+  }
+  if(!mv){
+    if(keys['a']||keys['arrowleft'])kx--;
+    if(keys['d']||keys['arrowright'])kx++;
+    if(keys['w']||keys['arrowup'])ky--;
+    if(keys['s']||keys['arrowdown'])ky++;
+    if(kx||ky){kd=Math.sqrt(kx*kx+ky*ky);dx=kx/kd;dy=ky/kd;mv=true;}
+  }
+  if(!mv&&mouseHold){
+    ax=mouseW.x-p.x; ay=mouseW.y-p.y; ad=Math.sqrt(ax*ax+ay*ay);
+    if(ad>12){dx=ax/ad;dy=ay/ad;mv=true;}
+  }
+  if(mv){
+    p.x=clamp(p.x+dx*p.speed*dt,20,WORLD.w-20);
+    p.y=clamp(p.y+dy*p.speed*dt,20,WORLD.h-20);
+    p.walk+=dt*17;
+  }else{p.walk*=0.85;}
+  p.moving=mv;
+}
+
+/* 耕地：走过去自动拾取，无耗时；只有原料受背包上限限制 */
+function updateFields(dt){
+  var i,j,f,pl,fx,fy;
+  for(i=0;i<4;i++){
+    f=fields[i];
+    if(!f.open){f.rev=Math.max(0,f.rev-dt*2);continue;}
+    f.rev=Math.min(1,f.rev+dt*2);
+    for(j=0;j<16;j++){pl=f.plots[j]; if(!pl.m){pl.t-=dt; if(pl.t<=0)pl.m=true;}}
+    for(j=0;j<16;j++){
+      pl=f.plots[j]; if(!pl.m) continue;
+      fx=f.x+(j%4)*TILE+TILE/2; fy=f.y+((j/4)|0)*TILE+TILE/2;
+      if(dist(player.x,player.y,fx,fy)<58){
+        if(rawTotal()<player.cap){
+          pl.m=false; pl.t=REGROW; addCarry(f.raw,1);
+          float(fx,fy-30,'+1 '+ITEM[f.raw].i,'#fff',14);
+          spark(fx,fy,'#ffe08a',4);
+        }else if(player.fullCd<=0){
+          player.fullCd=1.6; float(player.x,player.y-58,'原料已满','#ff9c7a',17);
+        }
+      }
+    }
+  }
+}
+
+/* 交互：走到点就触发（接触式），不上限——
+   身上所有东西都能放下；托盘/产出框随便堆，不排队等。 */
+function updateInteract(dt){
+  var p=player,n,c;
+  p.actCd=(p.actCd||0)-dt; p.fullCd-=dt; p.warnCd=(p.warnCd||0)-dt;
+  state.shelfHold=Math.max(0,(state.shelfHold||0)-dt);
+
+  /* 加工坊 —— 投入：身上所有原料一次放下，不限量、不分品类 */
+  if(dist(p.x,p.y,PROC.inPos.x,PROC.inPos.y)<78 && hasAny(RAWS) && (!PROC.job||true)){
+    n=dumpAll(RAWS,PROC.inBuf);
+    if(n){ float(PROC.inPos.x,PROC.inPos.y-58,'投放 ×'+n,'#fff2c8',15); p.actCd=0.12; return; }
+  }
+  /* 加工坊 —— 取出：全部取走，不限量 */
+  if(dist(p.x,p.y,PROC.outPos.x,PROC.outPos.y)<78 && PROC.outBuf.length){
+    n=drainAll(PROC.outBuf);
+    float(PROC.outPos.x,PROC.outPos.y-58,'取走 ×'+n,'#d6ffc0',15); p.actCd=0.12; return;
+  }
+  /* 打包台 —— 投入：身上所有成品一次放下 */
+  if(dist(p.x,p.y,PACK.inPos.x,PACK.inPos.y)<78 && hasAny(DISHES)){
+    n=dumpAll(DISHES,PACK.inBuf);
+    if(n){ float(PACK.inPos.x,PACK.inPos.y-58,'投放 ×'+n,'#fff2c8',15); p.actCd=0.12; return; }
+  }
+  /* 打包台 —— 取出：全部取走 */
+  if(dist(p.x,p.y,PACK.outPos.x,PACK.outPos.y)<78 && PACK.outBuf.length){
+    n=drainAll(PACK.outBuf);
+    float(PACK.outPos.x,PACK.outPos.y-58,'取走 ×'+n,'#cfe6ff',15); p.actCd=0.12; return;
+  }
+  /* 柜台后暂存带：站在柜台后面这一整条任意位置 → 手里的礼盒全部放上去。
+     不限量、不用走到某个固定点，整条柜台后侧都能放。 */
+  if(boxKeys().length && behindCounter(p.x,p.y)){
+    var bks=boxKeys(), bi, kk2;
+    n=0;
+    for(bi=0;bi<bks.length;bi++){
+      kk2=bks[bi];
+      while((player.carry[kk2]||0)>0){
+        player.carry[kk2]--; state.shelf.push({k:kk2,t:0}); n++;
+      }
+      if((player.carry[kk2]||0)<=0) delete player.carry[kk2];
+    }
+    if(n){ float(p.x,p.y-74,'放上柜台 ×'+n,'#fff2c8',15); p.actCd=0.35; return; }
+  }
+}
+
+function updateProcs(dt){
+  var m=PROC;
+  if(!m.job && m.inBuf.length>0){ m.job=m.inBuf.shift(); m.prog=0; }
+  if(m.job){
+    m.prog+=dt;
+    if(m.prog>=m.dur){ m.outBuf.push(RECIPE[m.job]); m.job=null; m.prog=0; }
+  }
+}
+
+function updatePackers(dt){
+  var k=PACK;
+  k.staffed = state.autoPack || dist(player.x,player.y,k.opPad.x,k.opPad.y)<58;
+  if(!k.job && k.staffed && k.inBuf.length>0){ k.job=k.inBuf.shift(); k.prog=0; }
+  if(k.job && k.staffed){
+    k.prog+=dt;
+    if(k.prog>=k.dur){ k.outBuf.push('box_'+k.job); k.job=null; k.prog=0; }
+  }
+}
+
+function updateTravel(dt){
+  var i,tr,dest,e,u,mx,my;
+  state.convT-=dt; state.conv2T-=dt;
+
+  /* 传送带（第一次升级）：加工完自动送打包台 */
+  if(state.conv1 && state.convT<=0 && PROC.outBuf.length){
+    state.travel.push({item:PROC.outBuf.shift(),kind:'dish',t:0,dur:0.85,
+      from:{x:PROC.outPos.x,y:PROC.outPos.y},to:{x:PACK.inPos.x,y:PACK.inPos.y}});
+    state.convT=0.22;
+  }
+  /* 传送链（后续升级）：打包完直送取餐架 */
+  if(state.conv2 && state.conv2T<=0 && PACK.outBuf.length && state.shelf.length<SHELF_CAP){
+    state.travel.push({item:PACK.outBuf.shift(),kind:'box',t:0,dur:0.95,
+      from:{x:PACK.outPos.x,y:PACK.outPos.y},to:{x:SHELF.cx,y:SHELF.cy}});
+    state.conv2T=0.22;
+  }
+
+  for(i=state.travel.length-1;i>=0;i--){
+    tr=state.travel[i]; tr.t+=dt/tr.dur;
+    dest=tr.to; e=Math.min(1,tr.t); u=1-e;
+    mx=(tr.from.x+dest.x)/2; my=(tr.from.y+dest.y)/2-90;
+    tr.x=u*u*tr.from.x+2*u*e*mx+e*e*dest.x;
+    tr.y=u*u*tr.from.y+2*u*e*my+e*e*dest.y;
+    if(tr.t>=1){
+      if(tr.kind==='box'){ if(state.shelf.length<SHELF_CAP) state.shelf.push({k:tr.item,t:0}); }
+      else PACK.inBuf.push(tr.item);
+      state.travel.splice(i,1);
+    }
+  }
+}
+
+function makeCustomer(){
+  var pool=[],i;
+  for(i=0;i<4;i++) if(fields[i].open) pool.push(DISHES[i]);
+  if(!pool.length) pool=['bread'];
+  return {want:pool[(Math.random()*pool.length)|0],x:1150,y:1210,a:1,st:'wait',ph:0,load:0};
+}
+
+/* 托盘上找一份指定菜色 */
+function shelfIdxOf(dish){
+  var i;
+  for(i=0;i<state.shelf.length;i++) if(state.shelf[i].k==='box_'+dish) return i;
+  return -1;
+}
+/* 队伍里还有没有人要这道菜 */
+function wantExists(dish){
+  var i;
+  for(i=0;i<customers.length;i++) if(customers[i].want===dish) return true;
+  return false;
+}
+/* 托盘保鲜：放了 18 秒还没人要的礼盒会坏掉清走，防止托盘被没人要的货堵死 */
+function updateShelfAge(dt){
+  var i,k,dish;
+  for(i=state.shelf.length-1;i>=0;i--){
+    state.shelf[i].t+=dt;
+    dish=state.shelf[i].k.slice(4);
+    if(state.shelf[i].t>18 && !wantExists(dish)){
+      k=state.shelf[i];
+      state.shelf.splice(i,1);
+      float(SHELF.cx,SHELF.cy-66,'这道没人要，清走了','#ffb46a',13);
+      spark(SHELF.cx,SHELF.cy,'#ffb46a',5);
+    }
+  }
+}
+
+/* 交货：金币不直接进兜，而是实体飞落到「金币台」堆着，玩家走过去一枚枚捡 */
+function serve(c){
+  var v=ITEM[c.want].v, idx=customers.indexOf(c), i, a, rad, tx, ty;
+  if(idx>=0) customers.splice(idx,1);
+  c.st='leave'; c.a=1; leavers.push(c);
+  for(i=0;i<v;i++){
+    a=rnd(0,6.2832); rad=rnd(4,64);
+    tx=MONEY_TILE.x+Math.cos(a)*rad;
+    ty=MONEY_TILE.y+Math.sin(a)*rad*0.72;
+    state.pile.push({x0:c.x,y0:c.y-46,x:c.x,y:c.y-46,tx:tx,ty:ty,t:0,settle:false});
+  }
+  float(c.x,c.y-70,'+'+v+' 💰','#ffd54a',20);
+  spark(c.x,c.y-40,'#ffd54a',12);
+}
+
+/* 金币抛物线飞向金币台 + 落定 */
+function updatePile(dt){
+  var i,g,e,u,mx,my;
+  for(i=0;i<state.pile.length;i++){
+    g=state.pile[i];
+    if(g.settle) continue;
+    g.t+=dt/0.7;
+    e=Math.min(1,g.t); u=1-e;
+    mx=(g.x0+g.tx)/2; my=Math.min(g.y0,g.ty)-140;
+    g.x=u*u*g.x0+2*u*e*mx+e*e*g.tx;
+    g.y=u*u*g.y0+2*u*e*my+e*e*g.ty;
+    if(g.t>=1){ g.settle=true; g.x=g.tx; g.y=g.ty; }
+  }
+}
+
+/* 服务：队首客人一个个取货；托盘上必须有他要的那款；每人加载 0.8s */
+function updateService(dt){
+  var c=customers[0], idx, i;
+  for(i=1;i<customers.length;i++) customers[i].load=0;
+  if(!c) return;
+  var manned = state.autoCash || behindCounter(player.x,player.y);
+  if(!manned){ c.load=0; return; }
+  /* 关键：顾客得自己走到柜台前的取餐位，才能开始取货。
+     隔着老远递东西不可能结账，必须 one by one 走到跟前。 */
+  if(dist(c.x,c.y,QUEUE[0].x,QUEUE[0].y)>10){ c.load=0; return; }
+  idx=shelfIdxOf(c.want);
+  if(idx<0){
+    c.load=0;
+    /* 后期（第二块地开了）不再给流程提示，只保留"钱够了去升级"那一条 */
+    if(!state.autoCash && !fields[1].open && player.warnCd<=0){
+      player.warnCd=1.8;
+      float(player.x,player.y-58,'队首要 '+ITEM[c.want].i+ITEM[c.want].n+'，先放到柜台上','#ffb46a',15);
+    }
+    return;
+  }
+  c.load=(c.load||0)+dt/0.5;
+  if(c.load>=1){
+    state.shelf.splice(idx,1);
+    c.load=0;
+    serve(c);
+  }
+}
+
+function updateCustomers(dt){
+  var i,c,tgt,d,s;
+  state.spawnT-=dt;
+  if(!state.ending && state.spawnT<=0 && customers.length<6){
+    customers.push(makeCustomer()); state.spawnT=rnd(0.8,1.5);
+  }
+  for(i=0;i<customers.length;i++){
+    c=customers[i]; tgt=QUEUE[Math.min(i,QUEUE.length-1)];
+    d=dist(c.x,c.y,tgt.x,tgt.y);
+    if(d>3){ s=Math.min(d,370*dt); c.x+=(tgt.x-c.x)/d*s; c.y+=(tgt.y-c.y)/d*s; c.ph+=dt*13; }
+    else c.ph*=0.9;
+  }
+  for(i=leavers.length-1;i>=0;i--){
+    c=leavers[i];
+    c.x+=210*dt; c.y-=26*dt;
+    c.a-=dt*0.75;
+    if(c.a<=0) leavers.splice(i,1);
+  }
+}
+
+function openField(i){
+  fields[i].open=true;
+  spark(fields[i].x+108,fields[i].y+108,'#8ef07a',20);
+}
+
+function applyUp(id){
+  if(id==='conv1') state.conv1=true;
+  else if(id==='conv2') state.conv2=true;
+  else if(id==='packer') state.autoPack=true;
+  else if(id==='cashier') state.autoCash=true;
+  else if(id==='bag') player.cap=32;
+  else if(id==='field2') openField(1);
+  else if(id==='field3') openField(2);
+  else if(id==='field4') openField(3);
+}
+
+function doUpgrade(){
+  var cur=UPGRADES[state.upIdx];
+  state.upProg=0; applyUp(cur.id);
+  float(UP_TILE.x,UP_TILE.y-100,cur.n+' 完成！','#9dff86',20);
+  spark(UP_TILE.x,UP_TILE.y,'#9dff86',26);
+  state.upIdx++;
+  if(state.upIdx>=UPGRADES.length){ state.ending=true; state.endT=0; }
+}
+
+function updateTiles(dt){
+  var p=player,cur=UPGRADES[state.upIdx],i,g,amt;
+  /* 升级踏板：踩上去，身上的钱 + 台上已落定的金币，一起往格子里填 */
+  if(cur && dist(p.x,p.y,UP_TILE.x,UP_TILE.y)<82){
+    if(p.coins>0.01 && state.upProg<cur.cost){
+      /* 一格一格填：填速随造价走，越贵的升级填得稍快（整体再快一倍，耗时约为原来一半） */
+      var rate=Math.max(2.8,cur.cost/4.5);
+      amt=Math.min(p.coins,rate*dt,cur.cost-state.upProg);
+      p.coins-=amt; state.upProg+=amt;
+      if(Math.random()<0.5) spark(UP_TILE.x+rnd(-46,46),UP_TILE.y+rnd(-46,46),'#ffd54a',1);
+    }
+    if(state.upProg>=cur.cost-0.001) doUpgrade();
+  }
+  /* 捡钱：走到金币台边，一枚一枚自动进兜 */
+  if(dist(p.x,p.y,MONEY_TILE.x,MONEY_TILE.y)<110){
+    for(i=state.pile.length-1;i>=0;i--){
+      g=state.pile[i]; if(!g.settle) continue;
+      if(dist(p.x,p.y,g.x,g.y)<92){
+        state.pile.splice(i,1);
+        p.coins+=1;
+        float(g.x,g.y-26,'+1 💰','#ffd54a',15);
+        spark(g.x,g.y,'#8ef07a',4);
+        break;
+      }
+    }
+  }
+}
+
+function updateEnding(dt){
+  if(!state.ending) return;
+  state.endT+=dt;
+  if(state.endT>0.9) state.newOn=true;
+  if(state.newOn) state.newA=Math.min(1,state.newA+dt*1.1);
+  if(state.endT>2.4 && !state.frozen){
+    state.frozen=true;
+    document.getElementById('endOverlay').classList.add('on');
+  }
+}
+
+function updateFloats(dt){
+  var i,p;
+  for(i=state.floats.length-1;i>=0;i--){
+    var f=state.floats[i]; f.t+=dt;
+    if(f.t>=f.life) state.floats.splice(i,1);
+  }
+  for(i=state.parts.length-1;i>=0;i--){
+    p=state.parts[i]; p.t+=dt; p.x+=p.vx*dt; p.y+=p.vy*dt; p.vy+=430*dt;
+    if(p.t>=p.life) state.parts.splice(i,1);
+  }
+}
+
+function updateHint(){
+  var el=document.getElementById('hint'), h='', tg=nextTarget();
+  if(tg) h=tg.prompt;
+  if(h!==state.hint){ state.hint=h; el.textContent=h; el.classList.toggle('on',!!h); }
+}
+
+function updateHUD(){
+  var bag=document.getElementById('hudBag'), coin=document.getElementById('hudCoin'), pl=document.getElementById('hudPile');
+  var t=rawTotal(), i, sett=0;
+  for(i=0;i<state.pile.length;i++) if(state.pile[i].settle) sett++;
+  bag.textContent='🌾 '+t+'/'+player.cap;
+  bag.className=(t>=player.cap)?'full':'';
+  coin.textContent='💰 '+Math.floor(player.coins);
+  pl.textContent='🪙 台上有 '+sett+' 枚';
+  pl.className=sett>0?'full':'bank';
+}
+
+function update(dt){
+  state.t+=dt;
+  updateFloats(dt);
+  if(!state.frozen){
+    updatePlayer(dt);
+    updateInteract(dt);
+    updateFields(dt);
+    updateProcs(dt);
+    updatePackers(dt);
+    updateTravel(dt);
+    updateCustomers(dt);
+    updateShelfAge(dt);
+    updatePile(dt);
+    updateService(dt);
+    updateTiles(dt);
+    updateHint();
+    updateHUD();
+  }
+  updateEnding(dt);
+  updateCam(dt);
+}
+
+/* ================= 绘制 ================= */
+function drawFence(x,y,w,h){
+  ctx.strokeStyle='#a9714b'; ctx.lineWidth=11; ctx.lineJoin='round';
+  rr(ctx,x,y,w,h,18); ctx.stroke();
+  ctx.strokeStyle='#cf9663'; ctx.lineWidth=4;
+  rr(ctx,x,y,w,h,18); ctx.stroke();
+}
+
+function drawField(f){
+  var x=f.x,y=f.y,S=FIELD_S,r,c,px,py,pl,pr;
+  if(!f.open){
+    ctx.save(); ctx.globalAlpha=0.92;
+    ctx.fillStyle='#cbb18c'; rr(ctx,x,y,S,S,16); ctx.fill();
+    ctx.setLineDash([12,10]); ctx.strokeStyle='#a98f6c'; ctx.lineWidth=4;
+    rr(ctx,x+9,y+9,S-18,S-18,13); ctx.stroke(); ctx.setLineDash([]);
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.font='44px '+EF; ctx.fillText('🔒',x+S/2,y+S/2-16);
+    ctx.fillStyle='#7a5c38'; ctx.font='bold 17px sans-serif';
+    ctx.fillText(ITEM[f.raw].n+'地',x+S/2,y+S/2+34);
+    ctx.restore(); return;
+  }
+  ctx.save();
+  if(f.rev<1){ ctx.translate(x+S/2,y+S/2); ctx.scale(0.7+0.3*f.rev,0.7+0.3*f.rev); ctx.translate(-(x+S/2),-(y+S/2)); }
+  ctx.fillStyle='#8a5c34'; rr(ctx,x,y,S,S,16); ctx.fill();
+  for(r=0;r<4;r++)for(c=0;c<4;c++){
+    px=x+c*TILE; py=y+r*TILE; pl=f.plots[r*4+c];
+    ctx.fillStyle='#6f4a28'; rr(ctx,px+4,py+4,TILE-8,TILE-8,10); ctx.fill();
+    ctx.fillStyle='#8f6236'; rr(ctx,px+8,py+8,TILE-16,TILE-16,8); ctx.fill();
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    if(pl.m){ ctx.font='36px '+EF; ctx.fillText(ITEM[f.raw].i,px+TILE/2,py+TILE/2+1); }
+    else{
+      pr=1-pl.t/REGROW; ctx.globalAlpha=0.85;
+      ctx.font=Math.round(13+14*pr)+'px '+EF;
+      ctx.fillText('🌱',px+TILE/2,py+TILE/2+3); ctx.globalAlpha=1;
+    }
+  }
+  ctx.restore();
+  drawFence(x-9,y-9,S+18,S+18);
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillStyle='#7a5c38'; ctx.font='bold 12.5px sans-serif';
+  ctx.fillText(ITEM[f.raw].n+'地',x+S/2,y-16);
+}
+
+function drawTable(x,y,w,h,items,tint,label){
+  ctx.fillStyle='#8a5c34'; rr(ctx,x,y,w,h,12); ctx.fill();
+  ctx.fillStyle='#c08850'; rr(ctx,x+4,y+4,w-8,h-8,10); ctx.fill();
+  ctx.fillStyle=tint; rr(ctx,x+8,y+8,w-16,h-16,8); ctx.fill();
+  var n=Math.min(items.length,5),i,py;
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  for(i=0;i<n;i++){ py=y+h*(i+0.5)/5; ctx.font='20px '+EF; ctx.fillText(info(items[i]).i,x+w/2,py); }
+  if(items.length>0){
+    ctx.fillStyle='rgba(60,36,16,.86)'; rr(ctx,x+w-40,y+h-26,34,20,8); ctx.fill();
+    ctx.fillStyle='#ffe9a8'; ctx.font='bold 12px sans-serif';
+    ctx.fillText(String(items.length),x+w-23,y+h-16);
+  }
+  if(label){
+    ctx.fillStyle='#6b5a45'; ctx.font='bold 12px sans-serif';
+    ctx.fillText(label,x+w/2,y-11);
+  }
+}
+
+function drawStation(st,title,accent,icon){
+  var x=st.x,y=st.y,w=st.w,h=st.h;
+  var bodyX=x+86, bodyW=w-172;
+  ctx.fillStyle='rgba(60,35,10,.16)'; rr(ctx,x+6,y+h-4,w-12,14,7); ctx.fill();
+  drawTable(x+8,y,72,h,st.inBuf,'#f6ddb8','投入');
+  drawTable(x+w-80,y,72,h,st.outBuf,'#d9f0c0','取出');
+  ctx.fillStyle='#6f7a86'; rr(ctx,bodyX,y+6,bodyW,h-12,18); ctx.fill();
+  ctx.fillStyle='#95a2b0'; rr(ctx,bodyX+9,y+15,bodyW-18,h-30,13); ctx.fill();
+  ctx.fillStyle='#e8eef4'; ctx.beginPath(); ctx.arc(bodyX+bodyW/2,y+h/2-10,30,0,7); ctx.fill();
+  ctx.strokeStyle='#b8c4d0'; ctx.lineWidth=3; ctx.stroke();
+  ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.font='30px '+EF;
+  ctx.fillText(st.job?ITEM[st.job].i:icon,bodyX+bodyW/2,y+h/2-8);
+  var bw=bodyW-20, bx=bodyX+10, by=y+h-26;
+  ctx.fillStyle='#3c444d'; rr(ctx,bx,by,bw,11,5); ctx.fill();
+  if(st.job && st.prog>0){ ctx.fillStyle=accent; rr(ctx,bx+2,by+2,Math.max(3,(bw-4)*st.prog/st.dur),7,3); ctx.fill(); }
+  ctx.fillStyle='#7a5c38'; ctx.font='bold 12.5px sans-serif';
+  ctx.fillText(title,bodyX+bodyW/2,y-13);
+}
+
+function drawOpPad(){
+  var k=PACK, manned=k.staffed;
+  ctx.beginPath(); ctx.arc(k.opPad.x,k.opPad.y,26,0,7);
+  ctx.fillStyle=manned?'rgba(126,224,125,.32)':'rgba(255,255,255,.22)'; ctx.fill();
+  ctx.strokeStyle=manned?'#7ee07d':'#ffffff'; ctx.lineWidth=4;
+  ctx.setLineDash([9,7]); ctx.stroke(); ctx.setLineDash([]);
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillStyle=manned?'#3f7a3a':'#5a4a35'; ctx.font='bold 12px sans-serif';
+  ctx.fillText(state.autoPack?'员工已接替打包':(manned?'✔ 正在打包':'站这里打包'),
+    k.opPad.x,k.opPad.y+46);
+}
+
+function drawTileBase(x,y,w,h){
+  ctx.fillStyle='#413c35'; rr(ctx,x,y,w,h,17); ctx.fill();
+  ctx.strokeStyle='#26221c'; ctx.lineWidth=3; rr(ctx,x,y,w,h,17); ctx.stroke();
+  var L=26,cs=[[8,8,1,1],[w-8,8,-1,1],[8,h-8,1,-1],[w-8,h-8,-1,-1]],i,c,cx,cy;
+  ctx.strokeStyle='#ffffff'; ctx.lineWidth=5; ctx.lineCap='round';
+  for(i=0;i<4;i++){
+    c=cs[i]; cx=x+c[0]; cy=y+c[1];
+    ctx.beginPath(); ctx.moveTo(cx+c[2]*L,cy); ctx.lineTo(cx,cy); ctx.lineTo(cx,cy+c[3]*L); ctx.stroke();
+  }
+}
+
+function drawUpgradeTile(){
+  var W=150,H=150, x=UP_TILE.x-W/2, y=UP_TILE.y-H/2;
+  var cur=UPGRADES[state.upIdx], p=cur?clamp(state.upProg/cur.cost,0,1):1;
+  drawTileBase(x,y,W,H);
+  ctx.save(); rr(ctx,x+3,y+3,W-6,H-6,14); ctx.clip();
+  ctx.fillStyle='rgba(130,222,130,.52)';
+  ctx.fillRect(x+3,y+H-3-(H-6)*p,W-6,(H-6)*p);
+  ctx.restore();
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  if(cur){
+    ctx.font='36px '+EF; ctx.fillText(cur.i,UP_TILE.x,UP_TILE.y-34);
+    ctx.fillStyle='#fff3d6'; ctx.font='bold 13px sans-serif';
+    ctx.fillText(cur.n,UP_TILE.x,UP_TILE.y+2);
+    ctx.fillStyle='#5fbf5f'; rr(ctx,UP_TILE.x-42,UP_TILE.y+16,30,18,5); ctx.fill();
+    ctx.fillStyle='#eaffd9'; ctx.font='bold 12px sans-serif';
+    ctx.fillText('💰',UP_TILE.x-27,UP_TILE.y+25);
+    ctx.fillStyle='#ffffff'; ctx.font='bold 17px sans-serif';
+    ctx.fillText(String(cur.cost),UP_TILE.x+10,UP_TILE.y+26);
+    ctx.fillStyle='#ffe9a8'; ctx.font='bold 12px sans-serif';
+    ctx.fillText(Math.floor(state.upProg)+' / '+cur.cost,UP_TILE.x,UP_TILE.y+50);
+  }else{
+    ctx.fillStyle='#ffffff'; ctx.font='bold 14px sans-serif';
+    ctx.fillText('全部升级',UP_TILE.x,UP_TILE.y-10);
+    ctx.fillText('完成',UP_TILE.x,UP_TILE.y+12);
+  }
+  ctx.fillStyle='rgba(20,16,10,.66)'; rr(ctx,x+8,y+H+8,134,24,8); ctx.fill();
+  ctx.fillStyle='#ffe9a8'; ctx.font='bold 12.5px sans-serif';
+  ctx.fillText('踩上来升级',UP_TILE.x,y+H+20);
+}
+
+function drawCoin(x,y,sc){
+  sc=sc||1;
+  ctx.save(); ctx.translate(x,y); ctx.scale(sc,sc);
+  ctx.fillStyle='#c9962f'; ctx.beginPath(); ctx.ellipse(0,3,13,13,0,0,7); ctx.fill();
+  ctx.fillStyle='#ffd54a'; ctx.beginPath(); ctx.ellipse(0,0,13,13,0,0,7); ctx.fill();
+  ctx.strokeStyle='#e0a92e'; ctx.lineWidth=2.4;
+  ctx.beginPath(); ctx.ellipse(0,0,9.4,9.4,0,0,7); ctx.stroke();
+  ctx.fillStyle='#a8730f'; ctx.font='bold 12px sans-serif';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText('$',0,1);
+  ctx.restore();
+}
+
+/* 金币台：顾客付的钱实体堆在这里，玩家走过来一枚枚捡 */
+function drawMoneyTile(){
+  var W=190,H=170, x=MONEY_TILE.x-W/2, y=MONEY_TILE.y-H/2, i,g,sett=0;
+  drawTileBase(x,y,W,H);
+  for(i=0;i<state.pile.length;i++){
+    g=state.pile[i];
+    if(g.settle) sett++;
+    drawCoin(g.x,g.y,g.settle?1:0.85);
+  }
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillStyle='#ffffff'; ctx.font='bold 19px sans-serif';
+  ctx.fillText('🪙 '+sett,MONEY_TILE.x,MONEY_TILE.y+H/2-16);
+  ctx.fillStyle='rgba(20,16,10,.66)'; rr(ctx,x+8,y+H+8,W-16,24,8); ctx.fill();
+  ctx.fillStyle='#ffe9a8'; ctx.font='bold 12.5px sans-serif';
+  ctx.fillText('顾客付的钱堆这，走过来捡',MONEY_TILE.x,y+H+20);
+}
+
+/* ===== 下一步去哪：统一算出一个目标点（画箭头 + 底部文字提示共用） ===== */
+function nextTarget(){
+  var cur=UPGRADES[state.upIdx],i,j,f,pl,fx,fy,sett=0,advanced=fields[1].open;
+  for(i=0;i<state.pile.length;i++) if(state.pile[i].settle) sett++;
+  /* 第二块耕地开出来之后（进入后期）：不再给流程指引线，
+     只在「钱够了可以升级」时提示一下 */
+  if(advanced){
+    if(cur && player.coins>=cur.cost-state.upProg)
+      return {x:UP_TILE.x,y:UP_TILE.y,r:104,k:'upgrade',
+        lbl:'去升级',prompt:'钱够了，踩上「升级踏板」完成「'+cur.n+'」▶'};
+    if(sett>0 && cur && player.coins+sett>=cur.cost-state.upProg)
+      return {x:MONEY_TILE.x,y:MONEY_TILE.y,r:100,k:'coin',lbl:'去捡钱',
+        prompt:'台上有 '+sett+' 枚金币，捡起来就够升级了 ▶'};
+    return null;
+  }
+  if(cur && player.coins>=cur.cost-state.upProg)
+    return {x:UP_TILE.x,y:UP_TILE.y,r:104,k:'upgrade',
+      lbl:'去升级',prompt:'钱够了！踩上「升级踏板」，把「'+cur.n+'」一格一格填满 ▶'};
+  if(sett>0 && cur && player.coins+sett>=cur.cost-state.upProg)
+    return {x:MONEY_TILE.x,y:MONEY_TILE.y,r:100,k:'coin',lbl:'去捡钱',
+      prompt:'台上有 '+sett+' 枚金币，捡起来就够升级了 ▶'};
+  if(hasAny(RAWS))
+    return {x:PROC.inPos.x,y:PROC.inPos.y,r:78,k:'proc',
+      lbl:'送原料',prompt:'把原料送到加工坊 ▶（一次全部放下）'};
+  if(PROC.outBuf.length)
+    return {x:PROC.outPos.x,y:PROC.outPos.y,r:78,k:'proc',
+      lbl:'取成品',prompt:'加工好了，去加工坊取成品 ▶'};
+  if(hasAny(DISHES))
+    return {x:PACK.inPos.x,y:PACK.inPos.y,r:78,k:'pack',
+      lbl:'去打包',prompt:'把成品送到打包台 ▶'};
+  if(PACK.outBuf.length)
+    return {x:PACK.outPos.x,y:PACK.outPos.y,r:78,k:'pack',
+      lbl:'取礼盒',prompt:'打包好了，去打包台取礼盒 ▶'};
+  if(boxKeys().length)
+    return {x:SERVE.x,y:SERVE.y,r:126,k:'shelf',lbl:'去柜台',
+      prompt:'走到收银台后面（整条都行），礼盒自动放上台，客人一个个取 ▶'};
+  if(sett>0)
+    return {x:MONEY_TILE.x,y:MONEY_TILE.y,r:100,k:'coin',lbl:'去捡钱',
+      prompt:'台上有 '+sett+' 枚金币，走过去捡起来 ▶'};
+  if(rawTotal()>=player.cap)
+    return {x:PROC.inPos.x,y:PROC.inPos.y,r:78,k:'proc',
+      lbl:'清背包',prompt:'原料已满，先去加工坊清空背包 ▶'};
+  for(i=0;i<4;i++){
+    f=fields[i]; if(!f.open) continue;
+    for(j=0;j<16;j++){
+      pl=f.plots[j]; if(!pl.m) continue;
+      fx=f.x+(j%4)*TILE+TILE/2; fy=f.y+((j/4)|0)*TILE+TILE/2;
+      return {x:fx,y:fy,r:54,k:'field',
+        lbl:'收'+ITEM[f.raw].n,prompt:'走进田里自动采摘（原料 '+rawTotal()+'/'+player.cap+'）'};
+    }
+  }
+  for(i=0;i<4;i++){
+    f=fields[i]; if(!f.open) continue;
+    return {x:f.x+FIELD_S/2,y:f.y+FIELD_S/2,r:90,k:'field',
+      lbl:'等生长',prompt:'作物正在生长，稍等一下 ▶'};
+  }
+  return null;
+}
+
+/* 目标点地面光环 + 头顶跳动箭头 + 从角色出发的虚线指引 */
+function drawGuideArrow(){
+  if(state.frozen) return;
+  var tg=nextTarget(); if(!tg) return;
+  var bob=Math.sin(state.t*4.4)*9;
+  var pulse=0.55+0.45*Math.abs(Math.sin(state.t*3.2));
+
+  /* 地面光环 */
+  ctx.save();
+  ctx.beginPath(); ctx.ellipse(tg.x,tg.y+22,tg.r*0.62,tg.r*0.28,0,0,7);
+  ctx.fillStyle='rgba(255,213,74,'+(0.16+0.14*pulse)+')'; ctx.fill();
+  ctx.strokeStyle='rgba(255,224,120,'+(0.55+0.35*pulse)+')'; ctx.lineWidth=4;
+  ctx.setLineDash([12,9]); ctx.lineDashOffset=-state.t*26; ctx.stroke();
+  ctx.setLineDash([]); ctx.lineDashOffset=0;
+  ctx.restore();
+
+  /* 玩家 → 目标 的虚线路径 */
+  if(Math.hypot(player.x-tg.x,player.y-tg.y)>170){
+    ctx.save();
+    ctx.setLineDash([13,13]); ctx.lineDashOffset=state.t*32;
+    ctx.strokeStyle='rgba(255,236,170,.60)'; ctx.lineWidth=5; ctx.lineCap='round';
+    ctx.beginPath(); ctx.moveTo(player.x,player.y+6); ctx.lineTo(tg.x,tg.y+14); ctx.stroke();
+    ctx.setLineDash([]); ctx.lineDashOffset=0; ctx.restore();
+  }
+
+  /* 箭头 */
+  var ay=tg.y-tg.r-58+bob;
+  ctx.save();
+  ctx.fillStyle='#ffd54a'; ctx.strokeStyle='#7a4c0c'; ctx.lineWidth=3.5; ctx.lineJoin='round';
+  ctx.beginPath();
+  ctx.moveTo(tg.x,ay+30);
+  ctx.lineTo(tg.x-21,ay-1); ctx.lineTo(tg.x-8,ay-1);
+  ctx.lineTo(tg.x-8,ay-30); ctx.lineTo(tg.x+8,ay-30);
+  ctx.lineTo(tg.x+8,ay-1); ctx.lineTo(tg.x+21,ay-1);
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.restore();
+
+  /* 标签 */
+  ctx.save();
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.font='bold 14px sans-serif';
+  var tw=ctx.measureText(tg.lbl).width+22;
+  ctx.fillStyle='rgba(58,36,16,.88)';
+  rr(ctx,tg.x-tw/2,ay-60,tw,23,11); ctx.fill();
+  ctx.fillStyle='#ffe9a8'; ctx.fillText(tg.lbl,tg.x,ay-48);
+  ctx.restore();
+}
+
+function drawPerson(x,y,o){
+  o=o||{};
+  var sw=o.phase?Math.sin(o.phase)*5:0;
+  var bob=o.phase?Math.abs(Math.sin(o.phase))*1.6:0;
+  ctx.save(); ctx.translate(x,y);
+  ctx.fillStyle='rgba(60,35,10,.2)';
+  ctx.beginPath(); ctx.ellipse(0,17,15,6.5,0,0,7); ctx.fill();
+  var y0=-bob;
+  ctx.fillStyle=o.pants||'#4a6fa5'; rr(ctx,-8,y0+2,7,17,3); ctx.fill(); rr(ctx,1,y0+2,7,17,3); ctx.fill();
+  ctx.fillStyle=o.shirt||'#f2f2f2'; rr(ctx,-11,y0-14,22,23,8); ctx.fill();
+  if(o.apron){ ctx.fillStyle=o.apron; rr(ctx,-8,y0-10,16,18,4); ctx.fill(); }
+  ctx.fillStyle=o.skin||'#ffd9b3';
+  ctx.beginPath(); ctx.arc(-12,y0-4+sw*0.35,4,0,7); ctx.fill();
+  ctx.beginPath(); ctx.arc(12,y0-4-sw*0.35,4,0,7); ctx.fill();
+  ctx.beginPath(); ctx.arc(0,y0-26,11,0,7); ctx.fill();
+  ctx.fillStyle=o.hair||'#f0c96b';
+  ctx.beginPath(); ctx.arc(0,y0-28,11.5,Math.PI*1.02,Math.PI*1.98); ctx.fill();
+  ctx.beginPath(); ctx.arc(0,y0-30,11,Math.PI,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#3a2410';
+  ctx.beginPath(); ctx.arc(-4,y0-25,1.7,0,7); ctx.fill();
+  ctx.beginPath(); ctx.arc(4,y0-25,1.7,0,7); ctx.fill();
+  if(o.hat){ ctx.fillStyle=o.hat; rr(ctx,-10,y0-41,20,10,5); ctx.fill(); rr(ctx,-14,y0-33,28,6,3); ctx.fill(); }
+  ctx.restore();
+}
+
+function bubble(x,y,icon){
+  ctx.save();
+  ctx.fillStyle='rgba(255,255,255,.97)'; ctx.strokeStyle='#c9a06a'; ctx.lineWidth=3;
+  rr(ctx,x-27,y-27,54,46,13); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x-9,y+17); ctx.lineTo(x,y+32); ctx.lineTo(x+9,y+17); ctx.closePath();
+  ctx.fillStyle='rgba(255,255,255,.97)'; ctx.fill(); ctx.strokeStyle='#c9a06a'; ctx.stroke();
+  ctx.fillStyle='#fff'; ctx.fillRect(x-11,y+13,22,7);
+  ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.font='26px '+EF;
+  ctx.fillText(icon,x,y-4);
+  ctx.restore();
+}
+
+/* 客人头顶的取货加载圈：0.5 秒一圈，一圈一个人 */
+function drawLoadRing(x,y,p){
+  ctx.save();
+  ctx.beginPath(); ctx.arc(x,y,20,0,7);
+  ctx.strokeStyle='rgba(60,40,15,.35)'; ctx.lineWidth=6; ctx.stroke();
+  ctx.beginPath(); ctx.arc(x,y,20,-Math.PI/2,-Math.PI/2+6.2832*Math.min(1,p),false);
+  ctx.strokeStyle='#ffd54a'; ctx.lineWidth=6; ctx.lineCap='round'; ctx.stroke();
+  ctx.restore();
+}
+
+function drawCustomer(c){
+  if(c.st!=='leave'){
+    drawPerson(c.x,c.y,{shirt:'#f7f3e8',pants:'#e8e2d4',hair:'#e9c46a',skin:'#ffd9b3',phase:c.ph});
+    bubble(c.x,c.y-74,ITEM[c.want].i);
+    if(c.load>0.02) drawLoadRing(c.x,c.y-74,c.load);
+  }else{
+    ctx.save(); ctx.globalAlpha=Math.max(0,Math.min(1,c.a));
+    drawPerson(c.x,c.y,{shirt:'#f7f3e8',pants:'#e8e2d4',hair:'#e9c46a',skin:'#ffd9b3',phase:c.ph});
+    ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.font='26px '+EF;
+    ctx.fillText('😋',c.x,c.y-62);
+    ctx.restore();
+  }
+}
+
+/* 员工：不是站着不动，是"站到岗位上接替你的活" */
+function drawEmployees(){
+  if(state.autoPack){
+    drawPerson(PACK.opPad.x,PACK.opPad.y,
+      {shirt:'#7ec4e8',pants:'#3f5f80',hair:'#4a3a2a',hat:'#fffaf0',skin:'#ffd9b3',phase:state.t*7});
+    /* 打包位已有人 → 打上工作标记 */
+    ctx.save();
+    ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.font='20px '+EF;
+    ctx.fillText('📦',PACK.opPad.x,PACK.opPad.y-64);
+    ctx.restore();
+  }
+  if(state.autoCash){
+    /* 员工站到收银位上接替你；你如果也挤过来，员工让半个身位，避免重叠 */
+    var ox=(dist(player.x,player.y,CASHIER_POS.x,CASHIER_POS.y)<44)?-72:0;
+    drawPerson(CASHIER_POS.x+ox,CASHIER_POS.y,
+      {shirt:'#f0a35e',pants:'#6b4a2a',hair:'#3a2a1a',hat:'#fffaf0',skin:'#ffd9b3',phase:state.t*7});
+    ctx.save();
+    ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.font='20px '+EF;
+    ctx.fillText('🛎️',CASHIER_POS.x+ox,CASHIER_POS.y-64);
+    ctx.restore();
+  }
+}
+
+function drawPlayerChar(){
+  var p=player,i,k,kinds,bx,by,inf;
+  drawPerson(p.x,p.y,{shirt:'#4a86c8',pants:'#2f5f96',hair:'#f2c94c',
+    hat:'#fff8ec',apron:'#fff8ec',skin:'#ffd9b3',phase:p.moving?p.walk:0});
+  kinds=Object.keys(p.carry);
+  if(kinds.length>6) kinds=kinds.slice(0,6);
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  for(i=0;i<kinds.length;i++){
+    k=kinds[i]; inf=info(k);
+    bx=p.x-(kinds.length-1)*18+i*36; by=p.y-70;
+    ctx.fillStyle='rgba(255,246,230,.96)'; rr(ctx,bx-15,by-15,30,30,9); ctx.fill();
+    ctx.strokeStyle='#c9a06a'; ctx.lineWidth=2; ctx.stroke();
+    ctx.font='18px '+EF; ctx.fillText(inf.i,bx,by+1);
+    if(p.carry[k]>1){
+      ctx.font='bold 12px sans-serif'; ctx.lineWidth=3;
+      ctx.strokeStyle='rgba(50,30,10,.8)'; ctx.fillStyle='#fff';
+      ctx.strokeText('x'+p.carry[k],bx+17,by+17); ctx.fillText('x'+p.carry[k],bx+17,by+17);
+    }
+  }
+}
+
+/* 柜台后暂存带：整条柜台后面都能放，礼盒不限量。
+   显示：最多 12 个一排平铺，超出部分用一个「+N」角标表示 */
+function drawShelf(){
+  var x=SHELF.x1, y=SHELF.y1, w=SHELF.x2-SHELF.x1, h=SHELF.h, i,px,py,slot=w/12, shown;
+  /* 木板 */
+  ctx.fillStyle='#8a5c34'; rr(ctx,x,y,w,h,10); ctx.fill();
+  ctx.fillStyle='#c08850'; rr(ctx,x+4,y+4,w-8,h-8,8); ctx.fill();
+  ctx.fillStyle='#f2dcb8'; rr(ctx,x+8,y+8,w-16,h-16,6); ctx.fill();
+  shown=Math.min(state.shelf.length,12);
+  for(i=0;i<shown;i++){
+    px=x+8+(w-16)*(i+0.5)/12; py=y+h/2;
+    ctx.strokeStyle='rgba(180,140,90,.45)'; ctx.lineWidth=1.4;
+    rr(ctx,px-slot*0.42,py-h*0.34,slot*0.84,h*0.68,6); ctx.stroke();
+    ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.font='19px '+EF;
+    ctx.fillText('🎁',px,py+1);
+  }
+  if(state.shelf.length>12){
+    ctx.textAlign='right'; ctx.textBaseline='middle';
+    ctx.fillStyle='#8a5c34'; ctx.font='bold 14px sans-serif';
+    ctx.fillText('+'+(state.shelf.length-12),x+w-8,y+h+14);
+  }
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillStyle='#7a5c38'; ctx.font='bold 12.5px sans-serif';
+  ctx.fillText('柜台暂存（整条后侧都能放 · 不限量）',SHELF.cx,y-11);
+}
+
+function drawCounter(){
+  var x=COUNTER.x,y=COUNTER.y,w=COUNTER.w,h=COUNTER.h;
+  ctx.fillStyle='rgba(60,35,10,.16)'; rr(ctx,x+6,y+h-2,w-12,14,7); ctx.fill();
+  ctx.fillStyle='#5a8a4a'; rr(ctx,x,y,w,h,12); ctx.fill();
+  ctx.fillStyle='#78b062'; rr(ctx,x+5,y+5,w-10,h-10,9); ctx.fill();
+  /* 台面 */
+  ctx.fillStyle='#8a5a30'; rr(ctx,x-6,y-16,w+12,26,10); ctx.fill();
+  ctx.fillStyle='#c78b52'; rr(ctx,x-2,y-12,w+4,18,8); ctx.fill();
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillStyle='#fff2cf'; ctx.font='bold 14px sans-serif';
+  ctx.fillText('🍽 收 银 台',x+w/2,y-3);
+}
+
+/* 柜台后收银位：有人站岗（玩家或员工）就开始一个个交货 */
+function drawServePad(){
+  var manned=state.autoCash||behindCounter(player.x,player.y);
+  ctx.save();
+  /* 整条柜台后侧画成一条可站位带（不是单个圈），表示"整条后侧都能站、都能放货" */
+  ctx.beginPath();
+  rr(ctx,COUNTER.x,COUNTER.y-158,COUNTER.w,104,16);
+  ctx.fillStyle=manned?'rgba(140,235,130,.16)':'rgba(255,229,140,.14)'; ctx.fill();
+  ctx.strokeStyle=manned?'rgba(160,240,150,.9)':'rgba(255,240,190,.8)'; ctx.lineWidth=4;
+  ctx.setLineDash([10,8]); ctx.stroke(); ctx.setLineDash([]);
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillStyle=manned?'#3f7a3a':'#6b5227'; ctx.font='bold 12.5px sans-serif';
+  ctx.fillText(state.autoCash?'员工已接替收银':(manned?'✔ 正在交货':'站到柜台后侧任意位置'),
+    SERVE.x,COUNTER.y-164);
+  ctx.restore();
+
+  /* 队首客人要什么：挂在柜台正面（客人那一侧），一眼对上 */
+  var c=customers[0];
+  if(c){
+    var cx=SERVE.x, cy=COUNTER.y+COUNTER.h/2;
+    ctx.save();
+    ctx.fillStyle='rgba(255,255,255,.97)'; ctx.strokeStyle='#c9a06a'; ctx.lineWidth=3;
+    rr(ctx,cx-62,cy-22,124,44,13); ctx.fill(); ctx.stroke();
+    ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.font='24px '+EF;
+    ctx.fillText(ITEM[c.want].i,cx-32,cy+1);
+    ctx.fillStyle='#6b4a2a'; ctx.font='bold 12px sans-serif';
+    ctx.fillText('队首要 '+ITEM[c.want].n,cx+18,cy+1);
+    ctx.restore();
+  }
+}
+
+function drawQueueFence(){
+  ctx.save();
+  ctx.strokeStyle='rgba(180,138,90,.75)'; ctx.lineWidth=6;
+  ctx.setLineDash([14,11]); ctx.lineJoin='round';
+  rr(ctx,1064,486,172,538,26); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillStyle='rgba(120,90,55,.85)'; ctx.font='bold 13px sans-serif';
+  ctx.fillText('排队区',1150,1046);
+}
+
+function drawNewArea(){
+  if(state.newA<=0.01) return;
+  var x=NEWAREA.x,y=NEWAREA.y,w=NEWAREA.w,h=NEWAREA.h;
+  ctx.save(); ctx.globalAlpha=state.newA;
+  ctx.fillStyle='#ecd9b2'; rr(ctx,x,y,w,h,20); ctx.fill();
+  ctx.strokeStyle='#c9a06a'; ctx.lineWidth=6; rr(ctx,x+9,y+9,w-18,h-18,16); ctx.stroke();
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.font='44px '+EF;
+  ctx.fillText('🌴',x+62,y+140); ctx.fillText('🍹',x+w-62,y+140);
+  ctx.font='56px '+EF; ctx.fillText('🎪',x+w/2,y+118);
+  ctx.fillStyle='#a9714b'; ctx.font='bold 20px sans-serif';
+  ctx.fillText('新 区 域 · 敬 请 期 待',x+w/2,y+236);
+  ctx.restore();
+}
+
+function drawTravelItems(){
+  var i,tr;
+  ctx.save();
+  if(state.conv1){
+    ctx.setLineDash([9,9]); ctx.lineWidth=4; ctx.strokeStyle='rgba(255,213,74,.5)';
+    ctx.beginPath(); ctx.moveTo(PROC.outPos.x,PROC.outPos.y);
+    ctx.lineTo(PACK.inPos.x,PACK.inPos.y); ctx.stroke();
+  }
+  if(state.conv2){
+    ctx.setLineDash([9,9]); ctx.lineWidth=4; ctx.strokeStyle='rgba(140,220,255,.55)';
+    ctx.beginPath(); ctx.moveTo(PACK.outPos.x,PACK.outPos.y);
+    ctx.lineTo(SHELF.cx,SHELF.cy); ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  ctx.restore();
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  for(i=0;i<state.travel.length;i++){
+    tr=state.travel[i];
+    if(tr.x===undefined) continue;
+    ctx.font='30px '+EF;
+    ctx.fillText(info(tr.item).i,tr.x,tr.y);
+  }
+}
+
+function drawFloats(){
+  var i,f,a,y;
+  ctx.save(); ctx.textAlign='center'; ctx.textBaseline='middle';
+  for(i=0;i<state.floats.length;i++){
+    f=state.floats[i]; a=1-f.t/f.life; y=f.y-f.t*42;
+    ctx.globalAlpha=Math.max(0,a);
+    ctx.font='bold '+f.s+'px sans-serif';
+    ctx.lineWidth=4; ctx.strokeStyle='rgba(60,35,10,.72)';
+    ctx.strokeText(f.text,f.x,y); ctx.fillStyle=f.c; ctx.fillText(f.text,f.x,y);
+  }
+  ctx.globalAlpha=1;
+  for(i=0;i<state.parts.length;i++){
+    f=state.parts[i];
+    ctx.globalAlpha=Math.max(0,1-f.t/f.life);
+    ctx.fillStyle=f.c; ctx.beginPath(); ctx.arc(f.x,f.y,f.r,0,7); ctx.fill();
+  }
+  ctx.globalAlpha=1; ctx.restore();
+}
+
+function drawJoystick(){
+  if(!joyW.on) return;
+  var dx=joyW.x-joyW.ox, dy=joyW.y-joyW.oy, d=Math.sqrt(dx*dx+dy*dy), m=56;
+  if(d>m){dx=dx/d*m;dy=dy/d*m;}
+  ctx.save();
+  ctx.globalAlpha=0.42;
+  ctx.beginPath(); ctx.arc(joyW.ox,joyW.oy,64,0,7);
+  ctx.fillStyle='#fff6e6'; ctx.fill();
+  ctx.lineWidth=4; ctx.strokeStyle='#b8834f'; ctx.stroke();
+  ctx.globalAlpha=0.85;
+  ctx.beginPath(); ctx.arc(joyW.ox+dx,joyW.oy+dy,28,0,7);
+  ctx.fillStyle='#ffd54a'; ctx.fill();
+  ctx.lineWidth=3; ctx.strokeStyle='#a9714b'; ctx.stroke();
+  ctx.restore();
+}
+
+function render(){
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  ctx.clearRect(0,0,VW,VH);
+  ctx.save();
+  ctx.translate(VW/2,VH/2); ctx.scale(cam.s,cam.s); ctx.translate(-cam.x,-cam.y);
+
+  ctx.drawImage(groundCv,0,0);
+  drawNewArea();
+
+  var i;
+  for(i=0;i<4;i++) drawField(fields[i]);
+  drawStation(PROC,'加工坊（不分品类）','#7de07d','🍳');
+  drawStation(PACK,'打包台','#ffd54a','📦');
+  drawOpPad();
+  drawShelf(); drawCounter(); drawServePad(); drawQueueFence();
+  drawUpgradeTile(); drawMoneyTile();
+  drawTravelItems();
+
+  for(i=0;i<leavers.length;i++) drawCustomer(leavers[i]);
+  drawEmployees();
+  for(i=0;i<customers.length;i++) drawCustomer(customers[i]);
+  drawPlayerChar();
+  drawGuideArrow();
+  drawFloats();
+
+  ctx.restore();
+  drawJoystick();
+}
+
+/* ================= 主循环 ================= */
+var last=0;
+function loop(ts){
+  if(!last) last=ts;
+  var dt=(ts-last)/1000; last=ts;
+  if(dt>0.05) dt=0.05;
+  update(dt);
+  render();
+  requestAnimationFrame(loop);
+}
+
+var logo=document.getElementById('logoImg');
+logo.addEventListener('error',function(){
+  logo.style.display='none';
+  document.getElementById('logoText').style.display='block';
+});
+
+resize();
+requestAnimationFrame(loop);
+
+})();
+</script>
+</body>
+</html>
